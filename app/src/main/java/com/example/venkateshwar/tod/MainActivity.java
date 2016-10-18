@@ -72,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
         final TextView textView = (TextView) findViewById(R.id.textView);
         final EditText editText = (EditText) findViewById(R.id.editText);
         ImageButton all = (ImageButton) findViewById(R.id.button3);
-
+        mLearnings.keepSynced(true);
         if (textView != null) {
             textView.setMovementMethod(new ScrollingMovementMethod());
             textView.setLongClickable(true);
