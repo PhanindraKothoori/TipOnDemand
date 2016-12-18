@@ -1,78 +1,177 @@
 package com.example.venkateshwar.tod;
 
+import android.app.AlertDialog;
+import android.content.res.Configuration;
+import android.os.AsyncTask;
+import android.support.design.widget.Snackbar;
 import android.content.Context;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
+import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
+import android.support.v4.app.ActionBarDrawerToggle;
+import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.AppCompatActivity;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
+import android.view.animation.Animation;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.auth.api.Auth;
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.android.gms.auth.api.signin.GoogleSignInResult;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.Task;
+import com.google.firebase.auth.AuthCredential;
+import com.google.firebase.auth.AuthResult;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.GenericTypeIndicator;
 import com.google.firebase.database.ValueEventListener;
 
-import java.io.BufferedReader;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
-    ArrayList<String> arrayList = new ArrayList<>();
+    public static ArrayList<Learning> arrayList = new ArrayList<>();
 
-    private boolean isNetworkAvailable() {
-
-        ConnectivityManager connectivityManager
-                = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
-        return activeNetworkInfo != null && activeNetworkInfo.isConnected();
-    }
-
-    public void updateCloud(DatabaseReference mLearnings, ArrayList<String> arrayList) {
-        if (isNetworkAvailable()) {
-            mLearnings.setValue(arrayList).addOnSuccessListener(new OnSuccessListener<Void>() {
-                @Override
-                public void onSuccess(Void aVoid) {
-                    Toast.makeText(getApplicationContext(), "success", Toast.LENGTH_LONG).show();
-                }
-            })
-                    .addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            Toast.makeText(getApplicationContext(), "fail", Toast.LENGTH_LONG).show();
-                        }
-                    });
-        }
-    }
+    private FirebaseAuth mAuth;
+    ImageButton gimme, add, all;
+    TextView textView;
+    EditText editText;
+    DatabaseReference mDatabase;
+    static DatabaseReference mLearnings;
+    private static final int RC_SIGN_IN = 1;
+    private GoogleApiClient mGoogleApiClient;
+    private static FirebaseUser user;
+    TextView uname;
+    String username;
+    static boolean already = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        FirebaseDatabase.getInstance().setPersistenceEnabled(true);
-        DatabaseReference mDatabase;
+
+        if (!already) { //instantiate local firebase and make it persistent offline B]
+            FirebaseDatabase.getInstance().setPersistenceEnabled(true);
+            already = true;
+        }
+        mAuth = FirebaseAuth.getInstance();
+        uname = (TextView) findViewById(R.id.uname);
         mDatabase = FirebaseDatabase.getInstance().getReference();
-        final DatabaseReference mLearnings = mDatabase.child("Learnings");
-        ImageButton gimme = (ImageButton) findViewById(R.id.button);
-        ImageButton add = (ImageButton) findViewById(R.id.button2);
-        final TextView textView = (TextView) findViewById(R.id.textView);
-        final EditText editText = (EditText) findViewById(R.id.editText);
-        ImageButton all = (ImageButton) findViewById(R.id.button3);
-        mLearnings.keepSynced(true);
+        gimme = (ImageButton) findViewById(R.id.button);
+        add = (ImageButton) findViewById(R.id.button2);
+        all = (ImageButton) findViewById(R.id.button3);
+        textView = (TextView) findViewById(R.id.textView);
+        editText = (EditText) findViewById(R.id.editText);
+        user = mAuth.getCurrentUser();
+        uname.setTextColor(Color.BLACK);
+
+        final Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                mLearnings.addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot dataSnapshot) {
+                        GenericTypeIndicator<List<Learning>> typeIndicator = new GenericTypeIndicator<List<Learning>>() {
+                        };
+                        List<Learning> cloudCopy = dataSnapshot.getValue(typeIndicator);
+                        HashSet<Learning> hashSet = new HashSet<Learning>();
+                        if (cloudCopy != null)
+                            hashSet.addAll(cloudCopy);
+                        hashSet.addAll(arrayList);
+                        arrayList.clear();
+                        hashSet.remove(null);
+                        arrayList.addAll(hashSet);
+                        Collections.sort(arrayList, new Comparator<Learning>() {
+                            @Override
+                            public int compare(Learning lhs, Learning rhs) {
+                                DateFormat dateFormat = new SimpleDateFormat("yyyy-MMM-dd hh:mm:ss");
+                                Date l = null, r = null;
+                                try {
+                                    l = dateFormat.parse(lhs.getCreated());
+                                    r = dateFormat.parse(rhs.getCreated());
+                                } catch (ParseException e) {
+                                    e.printStackTrace();
+                                }
+                                return l.compareTo(r);
+                            }
+                        });
+                        if (cloudCopy != null && arrayList.size() != cloudCopy.size()) {
+                            mLearnings.setValue(arrayList);
+                        }
+                        Snackbar.make(findViewById(android.R.id.content), "Synced with cloud", Snackbar.LENGTH_SHORT).show();
+
+//                        Toast.makeText(getApplicationContext(), "Synced with cloud", Toast.LENGTH_LONG).show();
+                    }
+
+                    @Override
+                    public void onCancelled(DatabaseError databaseError) {
+
+                    }
+                });
+            }
+        };
+        FirebaseAuth.AuthStateListener mAuthListener = new FirebaseAuth.AuthStateListener() {
+            @Override
+            public void onAuthStateChanged(@NonNull FirebaseAuth firebaseAuth) {
+                FirebaseUser tempuser = firebaseAuth.getCurrentUser();
+                //User is signed in
+                if (tempuser != null) {
+                    user = tempuser;
+                    username = user.getDisplayName();
+                    mLearnings = mDatabase.child("users").child(user.getUid());
+                    mLearnings.keepSynced(true);
+                    AsyncTask.execute(runnable);
+                    uname.setText(user.getDisplayName());
+                } else {
+                    //User is signed out
+                    uname.setText("");
+                }
+            }
+        };
+
+
+        mAuth.addAuthStateListener(mAuthListener);
+        // Configure Google Sign In
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(getString(R.string.webclientid))
+                .requestEmail()
+                .build();
+        mGoogleApiClient = new GoogleApiClient.Builder(getApplicationContext())
+                .enableAutoManage(this, new GoogleApiClient.OnConnectionFailedListener() {
+                    @Override
+                    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+
+                    }
+                })
+                .addApi(Auth.GOOGLE_SIGN_IN_API, gso)
+                .build();
+
         if (textView != null) {
             textView.setMovementMethod(new ScrollingMovementMethod());
             textView.setLongClickable(true);
@@ -81,38 +180,11 @@ public class MainActivity extends AppCompatActivity {
             textView.setFocusableInTouchMode(true);
         }
 
-        mLearnings.addValueEventListener(new ValueEventListener() {
-            @Override
-            public void onDataChange(DataSnapshot dataSnapshot) {
-                List<String> l = (List<String>) dataSnapshot.getValue();
-                int i = 0;
-                while (i < l.size()) {
-                    if (i >= arrayList.size()) {
-                        arrayList.add(l.get(i));
-                    } else if (!(arrayList.get(i).equals(l.get(i)))) {
-                        arrayList.set(i, l.get(i));
-                    }
-                    i++;
-                }
-                Toast.makeText(MainActivity.this, "Successfully Synced.", Toast.LENGTH_SHORT).show();
-            }
-
-            @Override
-            public void onCancelled(DatabaseError databaseError) {
-
-            }
-        });
-
-
-//        final ArrayList<String> arrayList =new ArrayList<>(Arrays.asList("people first-", "technical next", "running behind money wont earn us money", "run behind knowledge/learning and it\'ll earn us money", "family first", "keep working and keep learning", "respect be respectful", "get out of that \'middle class\' tag", "don\'t learn half or leave something halfway", "don\'t learn something which is useless", "have specific and unrealistic goals(becoming a better person isn\'t a goal)", "go out of your comfort zone", "hard work will stretch you in a way so you grow", "focus your energy in a more directed path", "people spend money on you because they take value from you", "Current education system sucks", "patch your gaps(both in knowledge and personally)", "develop personality", "manage your sleep", "prioritize things", "learning by self, using google, internet etc", "Everything exists for a reason", "Everything happens for a reason", "Everyone comes into your life with a reason. They either teach you something or make you forget something.", "eft-emotional freedom techniques", "resolve stuff that condition us", "deschooling", "you can\'t complete something just by spending time on it", "only if we work on it can we achieve it", "few things are not meant to be taken to heart. if you dont know those few things, then explore those few things.", "you have talent. don\'t worry too much. you\'ll definitely get a job. might take time. not immediately but definitely.", "there shall be stress", "10-70-20", "whichever company we go, we will find someone who is better than us. if we dont, then we are in a bad company :P ;)", "no panicking if our peers work better or faster than us. we\'re either under stress when we underperform or it is beyond our current potency", "what we can do is, work harder either to get the skillset required.", "if anyone doesn\'t deserve to be in our life, cut them", "keep yourself occupied to relieve from depression", "world would be a much better place if humans are treated as humans", "world would be a better place if everyone did their works sincerely and honestly all their life"));
-//        final ArrayList<String> arrayList =new ArrayList<>();
-//        final HashSet<String> arrayList=new HashSet<String>();
-//        arrayList.addAll(Arrays.asList("People First-", "Technical Next", "Running Behind Money Wont Earn Us Money", "Run Behind Knowledge/Learning And It'Ll Earn Us Money", "Family First", "Keep Working And Keep Learning", "Respect Be Respectful", "Get Out Of That 'Middle Class' Tag", "Don'T Learn Half Or Leave Something Halfway", "Don'T Learn Something Which Is Useless", "Have Specific And Unrealistic Goals(Becoming A Better Person Isn'T A Goal)", "Go Out Of Your Comfort Zone", "Hard Work Will Stretch You In A Way So You Grow", "Focus Your Energy In A More Directed Path", "People Spend Money On You Because They Take Value From You", "Current Education System Sucks", "Patch Your Gaps(Both In Knowledge And Personally)", "Develop Personality", "Manage Your Sleep", "Prioritize Things", "Learning By Self, Using Google, Internet Etc", "Everything Exists For A Reason", "Everything Happens For A Reason", "Everyone Comes Into Your Life With A Reason. They Either Teach You Something Or Make You Forget Something.", "Eft-Emotional Freedom Techniques", "Resolve Stuff That Condition Us", "Deschooling", "You Can'T Complete Something Just By Spending Time On It", "Only If We Work On It Can We Achieve It", "Few Things Are Not Meant To Be Taken To Heart. If You Dont Know Those Few Things, Then Explore Those Few Things.", "You Have Talent. Don'T Worry Too Much. You'Ll Definitely Get A Job. Might Take Time. Not Immediately But Definitely.", "There Shall Be Stress", "10-70-20", "Whichever Company We Go, We Will Find Someone Who Is Better Than Us. If We Dont, Then We Are In A Bad Company :P ;)", "No Panicking If Our Peers Work Better Or Faster Than Us. We'Re Either Under Stress When We Underperform Or It Is Beyond Our Current Potency", "What We Can Do Is, Work Harder Either To Get The Skillset Required.", "If Anyone Doesn'T Deserve To Be In Our Life, Cut Them", "Keep Yourself Occupied To Relieve From Depression", "World Would Be A Much Better Place If Humans Are Treated As Humans", "World Would Be A Better Place If Everyone Did Their Works Sincerely And Honestly All Their Life"));
         if (gimme != null) {
             gimme.setOnLongClickListener(new View.OnLongClickListener() {
                 @Override
                 public boolean onLongClick(View v) {
-                    Toast.makeText(getApplicationContext(), "Gimme one", Toast.LENGTH_SHORT).show();
+                    Snackbar.make(findViewById(android.R.id.content), "Gimme one", Snackbar.LENGTH_SHORT).show();
                     return true;
                 }
             });
@@ -121,7 +193,7 @@ public class MainActivity extends AppCompatActivity {
             all.setOnLongClickListener(new View.OnLongClickListener() {
                 @Override
                 public boolean onLongClick(View v) {
-                    Toast.makeText(getApplicationContext(), "Show All", Toast.LENGTH_SHORT).show();
+                    Snackbar.make(findViewById(android.R.id.content), "Show all", Snackbar.LENGTH_SHORT).show();
                     return true;
                 }
             });
@@ -130,83 +202,170 @@ public class MainActivity extends AppCompatActivity {
             add.setOnLongClickListener(new View.OnLongClickListener() {
                 @Override
                 public boolean onLongClick(View v) {
-                    Toast.makeText(getApplicationContext(), "Add", Toast.LENGTH_SHORT).show();
+                    Snackbar.make(findViewById(android.R.id.content), "Add", Snackbar.LENGTH_SHORT).show();
                     return true;
                 }
             });
         }
+
         if (all != null && textView != null) {
             all.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
+                    InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    inputMethodManager.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), InputMethodManager.HIDE_NOT_ALWAYS);
                     StringBuffer s1 = new StringBuffer();
                     int i = 0;
 
-                    for (String str : arrayList) {
-                        s1.append(i + 1 + ". " + str + "\n");
+                    for (Learning str : arrayList) {
+                        s1.append(i + 1 + ". " + str.toString() + "\n");
                         i++;
                     }
                     textView.setText(s1);
+
                 }
             });
         }
-        try {
-            InputStream inputStream = getApplicationContext().openFileInput("config.txt");
 
-            if (inputStream != null) {
-                InputStreamReader inputStreamReader = new InputStreamReader(inputStream);
-                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
-                String receiveString = "";
-                while ((receiveString = bufferedReader.readLine()) != null) {
-                    if (!arrayList.contains(receiveString) && !(receiveString.isEmpty())) {
-                        arrayList.add(receiveString);
+        if (gimme != null) {
+            gimme.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    inputMethodManager.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), InputMethodManager.HIDE_NOT_ALWAYS);
+                    if (arrayList.size() > 0) {
+                        int x = (int) (Math.random() * arrayList.size());
+                        assert textView != null;
+                        textView.setText(arrayList.get(x).getData());
                     }
                 }
-                inputStream.close();
-            }
-        } catch (FileNotFoundException e) {
-            Toast.makeText(getApplicationContext(), "login activity" + "File not found: " + e.toString(), Toast.LENGTH_LONG).show();
-        } catch (IOException e) {
-            Toast.makeText(getApplicationContext(), "login activity" + "Can not read file: " + e.toString(), Toast.LENGTH_LONG).show();
+            });
         }
-
-        assert gimme != null;
-        gimme.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                int x = (int) (Math.random() * arrayList.size());
-                assert textView != null;
-                textView.setText(arrayList.get(x));
-            }
-        });
 
         if (add != null) {
             add.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
+                    InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    inputMethodManager.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), InputMethodManager.HIDE_NOT_ALWAYS);
+                    String s = editText.getText().toString().trim();
                     try {
-                        String s = editText.getText().toString();
-                        if (arrayList.contains(s)) {
-                            Toast.makeText(getApplicationContext(), "Already learnt! Try something new next time.", Toast.LENGTH_LONG).show();
-                        } else if (s.isEmpty()) {
-                            Toast.makeText(getApplicationContext(), "Oy! Write something!", Toast.LENGTH_LONG).show();
-                        } else if (!s.isEmpty() && !arrayList.contains(s)) {
-                            arrayList.add(s);
-                        }
-                        OutputStreamWriter outputStream = new OutputStreamWriter(getApplicationContext().openFileOutput("config.txt", Context.MODE_APPEND));
+                        if (s.isEmpty()) {
+                            Snackbar.make(findViewById(android.R.id.content), "Oy! Write something.", Snackbar.LENGTH_LONG).show();
 
-                        outputStream.write(s + "\n");
-                        outputStream.close();
+                            throw new Exception();
+                        }
+                        for (Learning learning : arrayList) {
+                            if (learning.getData().equals(s)) {
+                                Snackbar.make(findViewById(android.R.id.content), "This one already exists.", Snackbar.LENGTH_LONG).show();
+                                throw new Exception();
+                            }
+                        }
+                        arrayList.add(new Learning(s));
                         editText.setText("");
-                        updateCloud(mLearnings, arrayList);
-                    } catch (IOException e) {
+                        Collections.sort(arrayList, new Comparator<Learning>() {
+                            @Override
+                            public int compare(Learning lhs, Learning rhs) {
+                                DateFormat dateFormat = new SimpleDateFormat("yyyy-MMM-dd hh:mm:ss");
+                                Date l = null, r = null;
+                                try {
+                                    l = dateFormat.parse(lhs.getCreated());
+                                    r = dateFormat.parse(rhs.getCreated());
+                                } catch (ParseException e) {
+                                    e.printStackTrace();
+                                }
+                                return l.compareTo(r);
+                            }
+                        });
+                        if (mLearnings != null)
+                            mLearnings.setValue(arrayList);
+                    } catch (Exception e) {
                         Log.e("Exception", "File write failed: " + e.toString());
                     }
 
                 }
+
             });
         }
+    }
 
+
+    private void signIn() {
+        Intent signInIntent = Auth.GoogleSignInApi.getSignInIntent(mGoogleApiClient);
+        startActivityForResult(signInIntent, RC_SIGN_IN);
+    }
+
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        // Result returned from launching the Intent from GoogleSignInApi.getSignInIntent(...);
+        if (requestCode == RC_SIGN_IN) {
+            GoogleSignInResult result = Auth.GoogleSignInApi.getSignInResultFromIntent(data);
+            if (result.isSuccess()) {
+                // Google Sign In was successful, authenticate with Firebase
+                GoogleSignInAccount account = result.getSignInAccount();
+                firebaseAuthWithGoogle(account);
+                Snackbar.make(findViewById(android.R.id.content), "Successfully Signed In", Snackbar.LENGTH_LONG).show();
+            } else {
+                // Google Sign In failed, update UI appropriately
+                Snackbar.make(findViewById(android.R.id.content), "Couldn't sign in ", Snackbar.LENGTH_LONG).show();
+            }
+        }
+    }
+
+
+    private void firebaseAuthWithGoogle(GoogleSignInAccount acct) {
+        AuthCredential credential = GoogleAuthProvider.getCredential(acct.getIdToken(), null);
+        mAuth.signInWithCredential(credential)
+                .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
+                    @Override
+                    public void onComplete(@NonNull Task<AuthResult> task) {
+//                        Log.d(TAG, "signInWithCredential:onComplete:" + task.isSuccessful());
+
+                        // If sign in fails, display a message to the user. If sign in succeeds
+                        // the auth state listener will be notified and logic to handle the
+                        // signed in user can be handled in the listener.
+                        if (!task.isSuccessful()) {
+//                            Log.w(TAG, "signInWithCredential", task.getException());
+                            Snackbar.make(findViewById(android.R.id.content), "Authentication failed.",
+                                    Snackbar.LENGTH_SHORT).show();
+                        }
+                        // ...
+                    }
+                });
+    }
+
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (user != null) {
+            uname.setText(user.getDisplayName());
+        }
+    }
+
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.menu, menu);
+        return super.onCreateOptionsMenu(menu);
+    }
+
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+
+        switch (item.getItemId()) {
+            case R.id.signin: {
+                signIn();
+                return true;
+            }
+            default:
+                return super.onOptionsItemSelected(item);
+
+        }
 
     }
 }
