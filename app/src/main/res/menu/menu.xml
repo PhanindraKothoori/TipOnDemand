@@ -2,8 +2,8 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
-        android:icon="@drawable/google"
+        android:icon="@drawable/ic_mode_edit_24dp"
         app:showAsAction="always"
-        android:id="@+id/signin"
-        android:title="SignIn" />
+        android:id="@+id/action_edit"
+        android:title="Edit" />
 </menu>
